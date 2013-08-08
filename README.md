@@ -5,4 +5,4 @@ thermotivator
 
 The *thermotivator* helps you to reach your goals when you have to do a large number of repetitive tasks. Of course, there's a reward when you reach your goal!
 
-Try it on the [demo page](http://henkjan.github.io/thermotivator "Thermotivator Demo Page")!
+Try it on the [demo page](http://hjmeijer.github.io/thermotivator "Thermotivator Demo Page")!
