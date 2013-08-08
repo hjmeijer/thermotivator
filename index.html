@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Lobster' rel='stylesheet' type='text/css'>
+<script src="http://cdnjs.cloudflare.com/ajax/libs/raphael/2.1.0/raphael-min.js"></script>
+
+<script>
+
+function assertValue(name, callback, question) {
+    if(localStorage[name]) {
+        return;
+    }
+    var value = false;
+    var ask = question;
+    while(!value) {
+        value = callback(prompt(ask));
+        ask = "I could not understand your answer. " + question;
+    }
+    localStorage[name] = value;
+}
+
+function assertValues() {
+    var stringcheck = function(a) { return a == "" ? false : a; };
+    var intcheck = function(a) { 
+        return a == parseInt(a, 10) ? parseInt(a, 10) : false; 
+    }
+    assertValue('name', stringcheck, "What is your name?");
+    assertValue('title', stringcheck, "What is the title of this countdown?");
+    assertValue('count', intcheck, "Howmany items to count?");
+    localStorage['done'] = localStorage['done'] ? localStorage['done'] : 0;
+}
+
+window.onload = function() {
+    document.getElementById('image').style.height = (window.innerHeight - 20) + 'px';
+    document.getElementById('image').style.width = '160px';
+
+    assertValues();
+    
+    document.getElementById("title").innerHTML = localStorage['title'];
+    document.getElementById("name").innerHTML = localStorage['name'];
+
+    var paper = Raphael('image');
+    var height = window.innerHeight - 250;
+    var cnt = localStorage['count'];
+    var blockheight = height/cnt;
+    var done = parseInt(localStorage['done']);
+
+    var bottom = paper.circle(80, height + 60, 75);
+    bottom.toBack();
+    bottom.attr("stroke", .3);
+    bottom.attr("fill", "rgb(255, 0, 0)");
+    var stroke = paper.rect(35, 0, 90, height);
+    stroke.toBack();
+    stroke.attr("stroke", .3);
+    var rect = paper.rect(35, 1, 90, height);
+    rect.attr({"fill": "90-#f00:0-#0f0:95", "stroke": 0});
+    
+    document.getElementById("done").innerHTML = done;
+    document.getElementById("todo").innerHTML = cnt - done;
+
+    var cover = paper.rect(35, 1, 90, height - done * blockheight);
+    cover.attr({"stroke": 0, "fill": "#fff"});
+    
+    document.getElementById("didone").onclick = function() {
+		done = Math.min(done + 1, cnt);
+		if(done >= cnt) document.location.href = "video.html";
+		localStorage['done'] = done;
+		cover.attr("height", height - done * blockheight);
+	    document.getElementById("done").innerHTML = done;
+	    document.getElementById("todo").innerHTML = cnt - done;
+    }
+    
+    document.getElementById("reset").onclick = function() {
+    	if(confirm("Clears title, name and counters. Ok?")) {
+	    	localStorage.clear();
+	    	document.location.href = document.location.href;
+	    }
+    }
+}
+
+</script>
+
+<style>
+body {
+    background-color: #efefef;
+    color:#222;
+    padding: 20px;
+    font-family: Lobster, sans-serif;
+    font-size: 150%;
+}
+h1, h2, h3 {
+	font-weight: normal;
+}
+button {
+    font-family: 'Open Sans', sans-serif;
+    font-size: 100%;
+    padding: 10px;
+}
+</style>
+
+</head>
+
+<body>
+
+<div id="image" style="float:left"></div>
+
+<div style="float:left">
+    <h1 id="title"></h1>
+    <h3>Already done: <span id="done"></span>!</h3>
+    <h3>Left to do: only <span id="todo"></span>!</h3>
+    <button id="didone">I did one!</button>
+    <h3>Come on <span id="name"></span>, keep going!</h3>    
+</div>
+
+<div style="float:right">
+    <button id="reset">Reset thermometer</button>
+</div>
+
+</body>
+
+
+</html>
