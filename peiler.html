@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1B1E1C">
+<title>Peiler 7 — richtingzoeker</title>
+<style>
+:root{
+  --case:#B4AFA0;
+  --case-dark:#8B8778;
+  --case-edge:#6E6B5F;
+  --dial:#15323B;
+  --dial-deep:#0C2028;
+  --ink:#EDE6D6;
+  --ink-dim:#7E9099;
+  --lamp:#F2662A;
+  --lamp-soft:#F2A24A;
+  --brass:#A8763E;
+  --shell:#1B1E1C;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:var(--shell);
+  font-family:var(--sans);
+  color:var(--ink);
+  display:flex;justify-content:center;
+  overscroll-behavior:none;
+  touch-action:manipulation;
+}
+#case{
+  width:100%;max-width:480px;min-height:100%;
+  background:
+    linear-gradient(180deg,var(--case) 0%,var(--case-dark) 100%);
+  display:flex;flex-direction:column;
+  padding:calc(14px + env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom));
+  gap:12px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.25), inset 0 0 60px rgba(0,0,0,.18);
+}
+
+/* ---- naamplaatje ---- */
+#plate{
+  display:flex;align-items:baseline;justify-content:space-between;
+  border-bottom:1px solid var(--case-edge);padding-bottom:8px;
+}
+#plate b{
+  font-family:var(--mono);font-size:15px;font-weight:700;
+  letter-spacing:.22em;text-transform:uppercase;color:#2B2C26;
+}
+#plate span{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;
+  text-transform:uppercase;color:#5C594E;
+}
+
+/* ---- wijzerplaat ---- */
+#dialwrap{position:relative;width:100%;aspect-ratio:1/1;
+  border-radius:50%;
+  background:var(--dial-deep);
+  box-shadow:0 0 0 6px var(--case-edge),0 0 0 8px rgba(255,255,255,.22),
+             inset 0 4px 16px rgba(0,0,0,.6);
+}
+canvas{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;display:block}
+#lock{
+  position:absolute;inset:0;border-radius:50%;display:none;
+  align-items:center;justify-content:center;text-align:center;
+  background:radial-gradient(circle,rgba(242,102,42,.92),rgba(242,102,42,.55));
+  font-family:var(--mono);font-size:15px;font-weight:700;letter-spacing:.14em;
+  color:#20120A;text-transform:uppercase;line-height:1.6;padding:0 18px;
+  animation:pulse .55s steps(2,end) infinite;
+}
+@keyframes pulse{50%{opacity:.65}}
+
+/* ---- uitlezing ---- */
+#read{display:grid;grid-template-columns:1fr auto;align-items:end;gap:4px 12px}
+#dist{font-family:var(--mono);font-size:clamp(46px,17vw,68px);font-weight:700;
+  line-height:.85;color:#23241F;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+#dist small{font-size:.3em;letter-spacing:.16em;margin-left:.35em;color:#5C594E}
+#bearing{font-family:var(--mono);font-size:13px;letter-spacing:.1em;color:#3E3F37;text-align:right}
+#status{grid-column:1/-1;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:#5C594E;border-top:1px solid var(--case-edge);padding-top:7px}
+#status.warn{color:#8C3A12}
+
+/* ---- knoppen ---- */
+.row{display:flex;gap:8px}
+button{
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.13em;text-transform:uppercase;
+  font-weight:700;color:#23241F;background:linear-gradient(180deg,#D6D1C2,#B0AB9B);
+  border:1px solid var(--case-edge);border-radius:3px;padding:13px 10px;flex:1;
+  box-shadow:0 2px 0 var(--case-edge);cursor:pointer;
+}
+button:active{transform:translateY(2px);box-shadow:none}
+button:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+button.on{background:linear-gradient(180deg,var(--lamp-soft),var(--lamp));color:#20120A}
+button.big{padding:16px 10px;font-size:13px}
+
+/* ---- oefenstand ---- */
+#sim{display:none;gap:6px;flex-direction:column;
+  border:1px dashed var(--case-edge);border-radius:4px;padding:10px}
+#sim p{margin:0 0 2px;font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:#5C594E}
+#pad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+#pad button{padding:15px 0;font-size:14px}
+#pad .sp{visibility:hidden}
+
+/* ---- instellingen ---- */
+details{border-top:1px solid var(--case-edge);padding-top:10px}
+summary{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:#5C594E;cursor:pointer;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸ ";}
+details[open] summary::before{content:"▾ ";}
+label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:#5C594E;margin:10px 0 3px}
+input{width:100%;font-family:var(--mono);font-size:16px;padding:10px;
+  border:1px solid var(--case-edge);border-radius:3px;background:#E2DDCE;color:#23241F}
+input:focus{outline:2px solid var(--lamp);outline-offset:-1px}
+.hint{font-family:var(--sans);font-size:11.5px;line-height:1.5;color:#4A4840;margin:10px 0 0}
+@media (prefers-reduced-motion:reduce){#lock{animation:none}}
+</style>
+</head>
+<body>
+<div id="case">
+
+  <div id="plate">
+    <b>Peiler 7</b>
+    <span id="mode">north-up</span>
+  </div>
+
+  <div id="dialwrap">
+    <canvas id="c"></canvas>
+    <div id="lock">Je staat<br>er bovenop</div>
+  </div>
+
+  <div id="read">
+    <div id="dist">––<small>m</small></div>
+    <div id="bearing">peiling ---°</div>
+    <div id="status">Druk op aanzetten</div>
+  </div>
+
+  <div class="row">
+    <button id="go" class="big">Aanzetten</button>
+    <button id="mute" class="big">Geluid</button>
+  </div>
+
+  <div id="sim">
+    <p>Oefenstand — loop met de pijlen</p>
+    <div id="pad">
+      <span class="sp"></span><button data-d="n">↑</button><span class="sp"></span>
+      <button data-d="w">←</button><button data-d="c">•</button><button data-d="e">→</button>
+      <span class="sp"></span><button data-d="s">↓</button><span class="sp"></span>
+    </div>
+  </div>
+
+  <details>
+    <summary>Instellingen</summary>
+    <label for="lat">Doel — breedtegraad</label>
+    <input id="lat" inputmode="decimal" value="49.1542114">
+    <label for="lon">Doel — lengtegraad</label>
+    <input id="lon" inputmode="decimal" value="2.5204386">
+    <div class="row" style="margin-top:12px">
+      <button id="here">Doel = hier</button>
+      <button id="simtog">Oefenstand</button>
+    </div>
+    <p class="hint">
+      <b>Doel = hier</b> zet het doel op je huidige plek — handig als je de schat verstopt.
+      De coördinaten blijven in de link staan, dus zet 'm bij de favorieten en hij onthoudt het doel.
+      Werkt de GPS niet? Open deze pagina dan in de browser van de telefoon in plaats van in een app.
+    </p>
+  </details>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+var TAU = Math.PI*2, RAD = Math.PI/180;
+var RANGES = [2000,1000,500,200,100,50,20,10];
+
+var state = {
+  target:{lat:49.1542114, lon:2.5204386},
+  pos:null,            // {lat,lon,acc}
+  dist:null, brg:null,
+  range:200,
+  running:false,
+  sound:true,
+  sim:false,
+  sweep:0,             // radians
+  lastFrame:0,
+  flare:0,             // 0..1 phosphor decay
+  lastCross:-1,
+  watchId:null
+};
+
+var $ = function(id){ return document.getElementById(id); };
+var cv = $("c"), ctx = cv.getContext("2d"), dpr = 1;
+
+/* ---------- geo rekenwerk ---------- */
+function haversine(a,b){
+  var R=6371000;
+  var dLat=(b.lat-a.lat)*RAD, dLon=(b.lon-a.lon)*RAD;
+  var la1=a.lat*RAD, la2=b.lat*RAD;
+  var h=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));
+}
+function bearing(a,b){
+  var la1=a.lat*RAD, la2=b.lat*RAD, dLon=(b.lon-a.lon)*RAD;
+  var y=Math.sin(dLon)*Math.cos(la2);
+  var x=Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dLon);
+  return (Math.atan2(y,x)/RAD+360)%360;
+}
+var COMPASS=["N","NNO","NO","ONO","O","OZO","ZO","ZZO","Z","ZZW","ZW","WZW","W","WNW","NW","NNW"];
+function compass(d){ return COMPASS[Math.round(d/22.5)%16]; }
+
+function pickRange(d){
+  for(var i=0;i<RANGES.length;i++){ if(d <= RANGES[i]*0.92) { var r=RANGES[i]; } }
+  var best=RANGES[0];
+  for(var j=0;j<RANGES.length;j++){ if(d<=RANGES[j]*0.9) best=RANGES[j]; }
+  return best;
+}
+/* omwentelingstijd in ms: ver = traag, dichtbij = snel */
+function sweepPeriod(d){
+  if(d==null) return 3400;
+  var t = Math.max(0, Math.min(1, 1 - Math.log10(Math.max(d,5)/5)/Math.log10(400/5)));
+  return 3200 - t*2700;   // 3200ms ver → 500ms vlakbij
+}
+
+/* ---------- geluid ---------- */
+var ac=null;
+function audio(){
+  if(!ac){
+    var C = window.AudioContext||window.webkitAudioContext;
+    if(!C) return null;
+    ac = new C();
+  }
+  if(ac.state==="suspended") ac.resume();
+  return ac;
+}
+function ping(d){
+  if(!state.sound) return;
+  var a=audio(); if(!a) return;
+  var t=a.currentTime;
+  var near = d==null?0:Math.max(0,Math.min(1,1-Math.log10(Math.max(d,5)/5)/Math.log10(400/5)));
+  var osc=a.createOscillator(), g=a.createGain(), bp=a.createBiquadFilter();
+  osc.type="triangle";
+  osc.frequency.setValueAtTime(430+near*760, t);
+  bp.type="bandpass"; bp.frequency.value=430+near*760; bp.Q.value=6;
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(0.22+near*0.14, t+0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+0.10+near*0.03);
+  osc.connect(bp); bp.connect(g); g.connect(a.destination);
+  osc.start(t); osc.stop(t+0.2);
+}
+var lockOsc=null;
+function lockTone(on){
+  var a=audio(); if(!a) return;
+  if(on && !lockOsc && state.sound){
+    lockOsc=a.createOscillator(); var g=a.createGain();
+    lockOsc.type="square"; lockOsc.frequency.value=1180;
+    g.gain.value=0.10;
+    lockOsc.connect(g); g.connect(a.destination); lockOsc.start();
+    lockOsc._g=g;
+  } else if((!on||!state.sound) && lockOsc){
+    try{ lockOsc.stop(); }catch(e){}
+    lockOsc=null;
+  }
+}
+
+/* ---------- tekenen ---------- */
+function resize(){
+  dpr = Math.min(window.devicePixelRatio||1, 2.5);
+  var r = cv.getBoundingClientRect();
+  cv.width = Math.round(r.width*dpr);
+  cv.height = Math.round(r.height*dpr);
+}
+window.addEventListener("resize", resize);
+
+function draw(){
+  var W=cv.width, H=cv.height, cx=W/2, cy=H/2, R=Math.min(cx,cy)-2;
+  ctx.clearRect(0,0,W,H);
+
+  // plaat
+  var grd=ctx.createRadialGradient(cx,cy*0.75,R*0.1,cx,cy,R);
+  grd.addColorStop(0,"#1B4150"); grd.addColorStop(1,"#0A1B22");
+  ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU); ctx.fill();
+
+  ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU); ctx.clip();
+
+  // ringen
+  ctx.strokeStyle="rgba(237,230,214,.16)"; ctx.lineWidth=1*dpr;
+  for(var i=1;i<=4;i++){ ctx.beginPath(); ctx.arc(cx,cy,R*i/4,0,TAU); ctx.stroke(); }
+
+  // kruisdraden
+  ctx.beginPath(); ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R);
+  ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy); ctx.stroke();
+
+  // graadstreepjes
+  ctx.strokeStyle="rgba(237,230,214,.3)";
+  for(var d=0;d<360;d+=15){
+    var len = (d%45===0)? R*0.075 : R*0.04;
+    var a=(d-90)*RAD;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(a)*R, cy+Math.sin(a)*R);
+    ctx.lineTo(cx+Math.cos(a)*(R-len), cy+Math.sin(a)*(R-len));
+    ctx.stroke();
+  }
+
+  // windstreken
+  ctx.fillStyle="rgba(237,230,214,.6)";
+  ctx.font="700 "+(11*dpr)+"px ui-monospace,Menlo,monospace";
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  var marks=[["N",0],["O",90],["Z",180],["W",270]];
+  for(var m=0;m<4;m++){
+    var ang=(marks[m][1]-90)*RAD, rr=R*0.86;
+    ctx.fillStyle = marks[m][0]==="N" ? "rgba(242,162,74,.95)" : "rgba(237,230,214,.55)";
+    ctx.fillText(marks[m][0], cx+Math.cos(ang)*rr, cy+Math.sin(ang)*rr);
+  }
+
+  // bereik-label
+  ctx.fillStyle="rgba(237,230,214,.4)";
+  ctx.font="700 "+(9.5*dpr)+"px ui-monospace,Menlo,monospace";
+  ctx.textAlign="left";
+  ctx.fillText("BEREIK "+state.range+" M", cx-R*0.62, cy+R*0.80);
+
+  // veegstraal met naschijn
+  if(state.running){
+    var steps=34, span=1.05;
+    for(var s=0;s<steps;s++){
+      var a0=state.sweep - (s+1)*(span/steps);
+      var a1=state.sweep - s*(span/steps);
+      ctx.beginPath(); ctx.moveTo(cx,cy);
+      ctx.arc(cx,cy,R,a0,a1);
+      ctx.closePath();
+      ctx.fillStyle="rgba(242,162,74,"+(0.16*Math.pow(1-s/steps,2.2))+")";
+      ctx.fill();
+    }
+    ctx.strokeStyle="rgba(242,200,140,.85)"; ctx.lineWidth=1.6*dpr;
+    ctx.beginPath(); ctx.moveTo(cx,cy);
+    ctx.lineTo(cx+Math.cos(state.sweep)*R, cy+Math.sin(state.sweep)*R); ctx.stroke();
+  }
+
+  // echo
+  if(state.dist!=null && state.flare>0.01){
+    var pr = Math.min(1, state.dist/state.range);
+    var ba = (state.brg-90)*RAD;
+    var bx = cx+Math.cos(ba)*R*pr, by = cy+Math.sin(ba)*R*pr;
+    var f = state.flare;
+    var gl=ctx.createRadialGradient(bx,by,0,bx,by,R*0.16*f+2);
+    gl.addColorStop(0,"rgba(242,102,42,"+(0.95*f)+")");
+    gl.addColorStop(1,"rgba(242,102,42,0)");
+    ctx.fillStyle=gl;
+    ctx.beginPath(); ctx.arc(bx,by,R*0.16*f+2,0,TAU); ctx.fill();
+    ctx.fillStyle="rgba(255,225,190,"+f+")";
+    ctx.beginPath(); ctx.arc(bx,by,3.2*dpr,0,TAU); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+/* ---------- lus ---------- */
+function frame(ts){
+  requestAnimationFrame(frame);
+  var dt = state.lastFrame ? Math.min(100, ts-state.lastFrame) : 16;
+  state.lastFrame = ts;
+
+  if(state.running){
+    var per = sweepPeriod(state.dist);
+    var prev = state.sweep;
+    state.sweep = (state.sweep + TAU*dt/per) % TAU;
+
+    if(state.dist!=null && state.dist > 8){
+      // ping wanneer de straal de echo passeert
+      var tb = ((state.brg-90)*RAD % TAU + TAU) % TAU;
+      var p = (prev % TAU + TAU) % TAU, c = state.sweep;
+      var crossed = (c >= p) ? (tb > p && tb <= c) : (tb > p || tb <= c);
+      if(crossed){ ping(state.dist); state.flare = 1; }
+    }
+  }
+  state.flare = Math.max(0, state.flare - dt/620);
+  draw();
+}
+
+/* ---------- uitlezing ---------- */
+function render(){
+  var d=state.dist;
+  if(d==null){
+    $("dist").innerHTML = '––<small>m</small>';
+    $("bearing").textContent = "peiling ---°";
+  } else if(d>=1000){
+    $("dist").innerHTML = (d/1000).toFixed(d>=10000?0:1)+'<small>km</small>';
+    $("bearing").textContent = "peiling "+Math.round(state.brg)+"° "+compass(state.brg);
+  } else {
+    $("dist").innerHTML = (d<10?d.toFixed(1):Math.round(d))+'<small>m</small>';
+    $("bearing").textContent = "peiling "+Math.round(state.brg)+"° "+compass(state.brg);
+  }
+  var near = d!=null && d<=8;
+  $("lock").style.display = near ? "flex" : "none";
+  lockTone(near && state.running);
+}
+
+function setStatus(t, warn){
+  $("status").textContent = t;
+  $("status").className = warn ? "warn" : "";
+}
+
+function update(lat,lon,acc){
+  state.pos={lat:lat,lon:lon,acc:acc};
+  state.dist = haversine(state.pos, state.target);
+  state.brg  = bearing(state.pos, state.target);
+  state.range = pickRange(state.dist);
+  render();
+}
+
+/* ---------- gps ---------- */
+function startGPS(){
+  if(!navigator.geolocation){ failGPS("Deze browser kent geen GPS."); return; }
+  setStatus("Zoeken naar satellieten…");
+  state.watchId = navigator.geolocation.watchPosition(function(p){
+    if(state.sim) return;
+    update(p.coords.latitude, p.coords.longitude, p.coords.accuracy);
+    setStatus("GPS actief · nauwkeurig tot ±"+Math.round(p.coords.accuracy)+" m");
+  }, function(err){
+    failGPS(err.code===1 ? "Geen toestemming voor locatie." : "Geen GPS-signaal.");
+  }, {enableHighAccuracy:true, maximumAge:1000, timeout:20000});
+}
+function failGPS(msg){
+  setStatus(msg+" Oefenstand aangezet.", true);
+  enableSim(true);
+}
+
+/* ---------- oefenstand ---------- */
+function enableSim(on){
+  state.sim = on;
+  $("sim").style.display = on ? "flex" : "none";
+  $("simtog").classList.toggle("on", on);
+  $("mode").textContent = on ? "oefenstand" : "north-up";
+  if(on){
+    var b = Math.random()*TAU;
+    update(
+      state.target.lat + Math.cos(b)*300/111320,
+      state.target.lon + Math.sin(b)*300/(111320*Math.cos(state.target.lat*RAD)),
+      0
+    );
+    if(!$("status").classList.contains("warn")) setStatus("Oefenstand · geen echte GPS");
+  } else {
+    setStatus("Zoeken naar satellieten…");
+  }
+}
+function step(dir){
+  if(!state.sim || !state.pos) return;
+  var m=12, dLat=0, dLon=0;
+  if(dir==="n") dLat= m/111320;
+  if(dir==="s") dLat=-m/111320;
+  if(dir==="e") dLon= m/(111320*Math.cos(state.pos.lat*RAD));
+  if(dir==="w") dLon=-m/(111320*Math.cos(state.pos.lat*RAD));
+  if(dir==="c"){ enableSim(true); return; }
+  update(state.pos.lat+dLat, state.pos.lon+dLon, 0);
+}
+
+/* ---------- doel & link ---------- */
+function readHash(){
+  var h=(location.hash||"").replace(/^#/,"");
+  var p=h.split(",");
+  if(p.length===2){
+    var la=parseFloat(p[0]), lo=parseFloat(p[1]);
+    if(isFinite(la)&&isFinite(lo)){
+      state.target={lat:la,lon:lo};
+      $("lat").value=la; $("lon").value=lo;
+    }
+  }
+}
+function applyTarget(){
+  var la=parseFloat($("lat").value), lo=parseFloat($("lon").value);
+  if(!isFinite(la)||!isFinite(lo)||la<-90||la>90||lo<-180||lo>180){
+    setStatus("Coördinaten kloppen niet. Gebruik punten, geen komma's.", true);
+    return;
+  }
+  state.target={lat:la,lon:lo};
+  try{ history.replaceState(null,"","#"+la+","+lo); }catch(e){}
+  if(state.pos) update(state.pos.lat,state.pos.lon,state.pos.acc);
+  if(!$("status").classList.contains("warn")) setStatus("Doel bijgewerkt");
+}
+
+/* ---------- bediening ---------- */
+$("go").addEventListener("click", function(){
+  if(!state.running){
+    state.running=true;
+    $("go").textContent="Uitzetten"; $("go").classList.add("on");
+    audio();
+    if(!state.sim) startGPS();
+  } else {
+    state.running=false;
+    $("go").textContent="Aanzetten"; $("go").classList.remove("on");
+    lockTone(false);
+    if(state.watchId!=null){ navigator.geolocation.clearWatch(state.watchId); state.watchId=null; }
+    setStatus("Uit");
+  }
+});
+$("mute").addEventListener("click", function(){
+  state.sound=!state.sound;
+  this.classList.toggle("on", !state.sound);
+  this.textContent = state.sound ? "Geluid" : "Stil";
+  if(!state.sound) lockTone(false);
+});
+$("simtog").addEventListener("click", function(){ enableSim(!state.sim); });
+$("here").addEventListener("click", function(){
+  if(!navigator.geolocation){ setStatus("Geen GPS beschikbaar.", true); return; }
+  setStatus("Positie bepalen…");
+  navigator.geolocation.getCurrentPosition(function(p){
+    $("lat").value=p.coords.latitude.toFixed(7);
+    $("lon").value=p.coords.longitude.toFixed(7);
+    applyTarget();
+    setStatus("Doel op deze plek gezet (±"+Math.round(p.coords.accuracy)+" m)");
+  }, function(){ setStatus("Positie niet gelukt.", true); }, {enableHighAccuracy:true});
+});
+$("lat").addEventListener("change", applyTarget);
+$("lon").addEventListener("change", applyTarget);
+
+// pad: tik en vasthouden
+(function(){
+  var timer=null;
+  $("pad").addEventListener("pointerdown", function(e){
+    var b=e.target.closest("button"); if(!b) return;
+    var d=b.dataset.d; step(d);
+    if(d!=="c") timer=setInterval(function(){ step(d); },130);
+  });
+  ["pointerup","pointercancel","pointerleave"].forEach(function(ev){
+    $("pad").addEventListener(ev, function(){ clearInterval(timer); });
+  });
+})();
+
+readHash();
+resize();
+render();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
