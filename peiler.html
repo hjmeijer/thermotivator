@@ -143,6 +143,7 @@ input:focus{outline:2px solid var(--lamp);outline-offset:-1px}
   <div class="row">
     <button id="go" class="big">Aanzetten</button>
     <button id="mute" class="big">Geluid</button>
+    <button id="comp" class="big">Kompas</button>
   </div>
 
   <div id="sim">
@@ -167,7 +168,12 @@ input:focus{outline:2px solid var(--lamp);outline-offset:-1px}
     <p class="hint">
       <b>Doel = hier</b> zet het doel op je huidige plek — handig als je de schat verstopt.
       De coördinaten blijven in de link staan, dus zet 'm bij de favorieten en hij onthoudt het doel.
-      Werkt de GPS niet? Open deze pagina dan in de browser van de telefoon in plaats van in een app.
+      Werkt de GPS of het kompas niet? Open deze pagina dan in de browser van de telefoon
+      in plaats van in een app.
+    </p>
+    <p class="hint">
+      <b>Kompas</b> draait de plaat mee met de telefoon: leg hem plat en de echo wijst de
+      echte richting op. Staat het kompas uit, dan wijst noord altijd naar boven.
     </p>
   </details>
 
@@ -189,6 +195,10 @@ var state = {
   sound:true,
   sim:false,
   sweep:0,             // radians
+  heading:0,           // graden, gladgestreken
+  headUp:false,        // kompasstand aan/uit
+  headingOk:false,     // is er signaal
+  lastPing:0,
   lastFrame:0,
   flare:0,             // 0..1 phosphor decay
   lastCross:-1,
@@ -214,6 +224,73 @@ function bearing(a,b){
 }
 var COMPASS=["N","NNO","NO","ONO","O","OZO","ZO","ZZO","Z","ZZW","ZW","WZW","W","WNW","NW","NNW"];
 function compass(d){ return COMPASS[Math.round(d/22.5)%16]; }
+
+/* ---------- kompas ---------- */
+/* In kompasstand draait de hele plaat mee, zodat de echo fysiek
+   de goede kant op wijst als de telefoon plat in de hand ligt. */
+function headOffset(){ return (state.headUp && state.headingOk) ? state.heading : 0; }
+function screenAng(deg){ return (deg - headOffset() - 90)*RAD; }
+
+var compassTimer=null;
+function setHeading(h){
+  h=(h%360+360)%360;
+  if(!state.headingOk){
+    state.heading=h; state.headingOk=true; updateMode();
+    setStatus("Kompas actief");
+  } else {
+    var d=((h-state.heading+540)%360)-180;   // kortste weg
+    state.heading=(state.heading+d*0.16+360)%360;
+  }
+}
+function onOrient(e){
+  var h=null;
+  if(typeof e.webkitCompassHeading==="number" && !isNaN(e.webkitCompassHeading)){
+    h=e.webkitCompassHeading;                 // iOS: t.o.v. het noorden
+  } else if(e.absolute===true && typeof e.alpha==="number" && e.alpha!==null){
+    h=360-e.alpha;                            // Android: alpha loopt andersom
+  }
+  if(h===null) return;
+  var so=(window.screen && screen.orientation && screen.orientation.angle) || 0;
+  setHeading(h+so);
+}
+function attachCompass(){
+  window.addEventListener("deviceorientationabsolute", onOrient, true);
+  window.addEventListener("deviceorientation", onOrient, true);
+  clearTimeout(compassTimer);
+  compassTimer=setTimeout(function(){
+    if(!state.headingOk) compassFail("Geen kompassignaal op deze telefoon.");
+  },2500);
+}
+function detachCompass(){
+  window.removeEventListener("deviceorientationabsolute", onOrient, true);
+  window.removeEventListener("deviceorientation", onOrient, true);
+  clearTimeout(compassTimer);
+  state.headingOk=false;
+}
+function compassFail(msg){
+  detachCompass();
+  state.headUp=false;
+  $("comp").classList.remove("on");
+  updateMode();
+  setStatus(msg+" Noord staat weer boven.", true);
+}
+function startCompass(){
+  if(!window.DeviceOrientationEvent){ compassFail("Deze telefoon heeft geen kompas."); return; }
+  if(typeof DeviceOrientationEvent.requestPermission==="function"){
+    DeviceOrientationEvent.requestPermission().then(function(r){
+      if(r==="granted") attachCompass();
+      else compassFail("Geen toestemming voor de bewegingssensor.");
+    }).catch(function(){
+      compassFail("Kompas geblokkeerd in dit venster.");
+    });
+  } else {
+    attachCompass();
+  }
+}
+function updateMode(){
+  $("mode").textContent = state.sim ? "oefenstand"
+    : (state.headUp && state.headingOk) ? "kompas" : "north-up";
+}
 
 function pickRange(d){
   for(var i=0;i<RANGES.length;i++){ if(d <= RANGES[i]*0.92) { var r=RANGES[i]; } }
@@ -293,15 +370,18 @@ function draw(){
   ctx.strokeStyle="rgba(237,230,214,.16)"; ctx.lineWidth=1*dpr;
   for(var i=1;i<=4;i++){ ctx.beginPath(); ctx.arc(cx,cy,R*i/4,0,TAU); ctx.stroke(); }
 
-  // kruisdraden
-  ctx.beginPath(); ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R);
-  ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy); ctx.stroke();
+  // kruisdraden (draaien mee in kompasstand)
+  ctx.beginPath();
+  var ax=screenAng(0), ay=screenAng(90);
+  ctx.moveTo(cx-Math.cos(ax)*R, cy-Math.sin(ax)*R); ctx.lineTo(cx+Math.cos(ax)*R, cy+Math.sin(ax)*R);
+  ctx.moveTo(cx-Math.cos(ay)*R, cy-Math.sin(ay)*R); ctx.lineTo(cx+Math.cos(ay)*R, cy+Math.sin(ay)*R);
+  ctx.stroke();
 
   // graadstreepjes
   ctx.strokeStyle="rgba(237,230,214,.3)";
   for(var d=0;d<360;d+=15){
     var len = (d%45===0)? R*0.075 : R*0.04;
-    var a=(d-90)*RAD;
+    var a=screenAng(d);
     ctx.beginPath();
     ctx.moveTo(cx+Math.cos(a)*R, cy+Math.sin(a)*R);
     ctx.lineTo(cx+Math.cos(a)*(R-len), cy+Math.sin(a)*(R-len));
@@ -314,7 +394,7 @@ function draw(){
   ctx.textAlign="center"; ctx.textBaseline="middle";
   var marks=[["N",0],["O",90],["Z",180],["W",270]];
   for(var m=0;m<4;m++){
-    var ang=(marks[m][1]-90)*RAD, rr=R*0.86;
+    var ang=screenAng(marks[m][1]), rr=R*0.86;
     ctx.fillStyle = marks[m][0]==="N" ? "rgba(242,162,74,.95)" : "rgba(237,230,214,.55)";
     ctx.fillText(marks[m][0], cx+Math.cos(ang)*rr, cy+Math.sin(ang)*rr);
   }
@@ -345,7 +425,7 @@ function draw(){
   // echo
   if(state.dist!=null && state.flare>0.01){
     var pr = Math.min(1, state.dist/state.range);
-    var ba = (state.brg-90)*RAD;
+    var ba = screenAng(state.brg);
     var bx = cx+Math.cos(ba)*R*pr, by = cy+Math.sin(ba)*R*pr;
     var f = state.flare;
     var gl=ctx.createRadialGradient(bx,by,0,bx,by,R*0.16*f+2);
@@ -355,6 +435,17 @@ function draw(){
     ctx.beginPath(); ctx.arc(bx,by,R*0.16*f+2,0,TAU); ctx.fill();
     ctx.fillStyle="rgba(255,225,190,"+f+")";
     ctx.beginPath(); ctx.arc(bx,by,3.2*dpr,0,TAU); ctx.fill();
+  }
+
+  // vaste index: de kant die de bovenkant van de telefoon op wijst
+  if(state.headUp && state.headingOk){
+    var t=R*0.055;
+    ctx.fillStyle="rgba(242,102,42,.95)";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy-R+t*2.1);
+    ctx.lineTo(cx-t, cy-R+t*0.2);
+    ctx.lineTo(cx+t, cy-R+t*0.2);
+    ctx.closePath(); ctx.fill();
   }
 
   ctx.restore();
@@ -373,10 +464,12 @@ function frame(ts){
 
     if(state.dist!=null && state.dist > 8){
       // ping wanneer de straal de echo passeert
-      var tb = ((state.brg-90)*RAD % TAU + TAU) % TAU;
+      var tb = (screenAng(state.brg) % TAU + TAU) % TAU;
       var p = (prev % TAU + TAU) % TAU, c = state.sweep;
       var crossed = (c >= p) ? (tb > p && tb <= c) : (tb > p || tb <= c);
-      if(crossed){ ping(state.dist); state.flare = 1; }
+      if(crossed && ts - state.lastPing > 110){
+        state.lastPing = ts; ping(state.dist); state.flare = 1;
+      }
     }
   }
   state.flare = Math.max(0, state.flare - dt/620);
@@ -436,7 +529,7 @@ function enableSim(on){
   state.sim = on;
   $("sim").style.display = on ? "flex" : "none";
   $("simtog").classList.toggle("on", on);
-  $("mode").textContent = on ? "oefenstand" : "north-up";
+  updateMode();
   if(on){
     var b = Math.random()*TAU;
     update(
@@ -504,6 +597,20 @@ $("mute").addEventListener("click", function(){
   this.classList.toggle("on", !state.sound);
   this.textContent = state.sound ? "Geluid" : "Stil";
   if(!state.sound) lockTone(false);
+});
+$("comp").addEventListener("click", function(){
+  if(!state.headUp){
+    state.headUp=true;
+    this.classList.add("on");
+    setStatus("Kompas zoeken…");
+    startCompass();
+  } else {
+    state.headUp=false;
+    this.classList.remove("on");
+    detachCompass();
+    updateMode();
+    setStatus("Noord staat boven");
+  }
 });
 $("simtog").addEventListener("click", function(){ enableSim(!state.sim); });
 $("here").addEventListener("click", function(){
